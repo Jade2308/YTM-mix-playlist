@@ -1,0 +1,871 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <base target="_top" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <style>
+    :root{ --border:#e6e6e6; --muted:#666; --bg:#f4f5f7; --card:#fff; --text:#111; }
+    html, body{ height:100%; }
+    body{
+      margin:0; background:var(--bg);
+      font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color:var(--text);
+      padding:12px;
+      padding-left:max(12px, env(safe-area-inset-left));
+      padding-right:max(12px, env(safe-area-inset-right));
+      padding-top:max(12px, env(safe-area-inset-top));
+      padding-bottom:max(16px, env(safe-area-inset-bottom));
+    }
+    .wrap{ width:100%; max-width:520px; margin:0 auto; }
+    h1{ font-size:18px; margin:0 0 6px; }
+    .sub{ color:var(--muted); font-size:13px; line-height:1.35; margin:0 0 12px; }
+    .card{ background:var(--card); border:1px solid var(--border); border-radius:20px; padding:14px; box-shadow:0 8px 18px rgba(0,0,0,0.06); }
+    label{ display:block; font-weight:800; font-size:13px; margin:12px 0 6px; }
+    input, select{
+      width:100%; font-size:16px; line-height:1.25; padding:12px;
+      border-radius:14px; border:1px solid var(--border); outline:none; box-sizing:border-box; background:#fff;
+    }
+    .row{ display:grid; grid-template-columns:1fr; gap:10px; }
+    @media (min-width:520px){ .row.two{ grid-template-columns:1fr 1fr; } }
+    .hint{ color:var(--muted); font-size:12px; margin-top:6px; }
+
+    .btn{
+      width:100%; margin-top:14px; padding:14px; border-radius:16px; border:0;
+      background:#111; color:#fff; font-size:16px; font-weight:700; line-height:1.25;
+      -webkit-font-smoothing:antialiased; text-rendering:geometricPrecision;
+    }
+    .btn:disabled{ opacity:.6; }
+    .btn.secondary{ background:#808080; color:#fff; }
+    .btn.small{ margin-top:8px; padding:12px; border-radius:14px; font-size:15px; font-weight:700; }
+
+    .status{
+      margin-top:12px; padding:12px; border-radius:14px;
+      background:#f3f4f6; border:1px solid #e5e7eb; font-size:13px; line-height:1.35;
+      word-break:break-word; display:none;
+    }
+    .error{ color:#b00020; }
+    a{ color:#0b5fff; text-decoration:none; }
+
+    details#advanced{ border:2px solid #9aa0a6; border-radius:16px; background:#fff; padding:0; overflow:hidden; margin-top:14px; }
+    details#advanced > summary{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:14px; background:#808080; color:#fff; font-weight:900; font-size:15px;
+      cursor:pointer; user-select:none;
+      -webkit-font-smoothing:antialiased; text-rendering:geometricPrecision;
+    }
+    details#advanced > summary::-webkit-details-marker{ display:none; }
+    details#advanced > summary::marker{ content:""; }
+
+    #pickerOverlay{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; z-index:9999; }
+
+    /* SHEET: no scrolling here; scroll is inside #pickerScroll */
+    #pickerSheet{
+      position:absolute;
+      inset:auto 0 0 0;
+      background:#fff;
+      border-radius:18px 18px 0 0;
+      height:88vh;
+      overflow:hidden; /* IMPORTANT: prevent any top leak */
+      padding:12px;
+      box-shadow:0 -12px 30px rgba(0,0,0,.18);
+      display:flex;
+      flex-direction:column;
+      -webkit-font-smoothing:antialiased;
+      text-rendering:geometricPrecision;
+    }
+
+    .pickerStickyTop{
+      flex:0 0 auto;
+      background:#fff;
+      padding-bottom:10px;
+      border-bottom:1px solid #eee;
+    }
+
+    #pickerScroll{
+      flex:1 1 auto;
+      overflow:auto;
+      -webkit-overflow-scrolling:touch;
+      padding-top:10px;
+    }
+
+    #pickerSaveBtn{
+      flex:0 0 auto;
+      margin-top:12px;
+    }
+
+    .pickerHeader{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .pickerHeaderLeft{ min-width:0; }
+    .pickerActions{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex:0 0 auto;
+      white-space:nowrap;
+    }
+
+    .pickerTitle{ font-weight:900; font-size:18px; }
+    .pickerRow{ display:flex; gap:10px; margin-top:10px; align-items:center; flex-wrap:wrap; }
+    .pickerRow input{ flex:1; min-width:180px; }
+
+    .pillBtn{
+      width:auto;
+      padding:10px 12px;
+      border-radius:14px;
+      border:1px solid #e5e7eb;
+      background:#f3f4f6;
+      color:#111;
+      font-weight:800;
+      font-size:13px;
+      line-height:1.2;
+      white-space:nowrap;
+      -webkit-font-smoothing:antialiased;
+      text-rendering:geometricPrecision;
+    }
+    .pillBtn:active{ filter:brightness(.97); }
+
+    .song{ display:flex; gap:10px; align-items:center; padding:10px; border:1px solid #eee; border-radius:14px; margin:8px 0; }
+    .song img{ width:44px; height:44px; border-radius:10px; object-fit:cover; flex:0 0 auto; background:#eee; }
+    .songTitle{ font-weight:800; }
+    .songMeta{ color:var(--muted); font-size:12px; word-break:break-all; }
+
+    /* ẩn debug box */
+    #debug{ display:none !important; }
+
+    /* FIX FONT for Safari/iOS form controls */
+    button, input, select, textarea{
+      font-family:inherit !important;
+      -webkit-font-smoothing:antialiased;
+      text-rendering:geometricPrecision;
+    }
+    button{ appearance:none; -webkit-appearance:none; }
+
+    /* "Tuỳ chọn" nhập số */
+    .prioHeadCustomRow{ display:none; margin-top:8px; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <h1>YTM Playlist Mixer</h1>
+    <div id="debug" class="hint">ready</div>
+
+    <div class="card">
+      <label>Playlist A</label>
+      <input id="playlistA" inputmode="url" value="" placeholder="Dán link playlist A..." />
+
+      <label>Playlist B</label>
+      <input id="playlistB" inputmode="url" value="" placeholder="Dán link playlist B..." />
+
+      <label>Tên playlist (tuỳ chọn)</label>
+      <input id="title" placeholder="Để trống = tự đặt theo ngày-giờ" />
+
+      <div class="row two">
+        <div>
+          <label>Tổng số bài</label>
+          <input id="totalItems" type="number" value="40" min="1" max="500" />
+        </div>
+        <div>
+          <label>Bắt đầu bằng</label>
+          <select id="startWith">
+            <option value="A" selected>A</option>
+            <option value="B">B</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row two">
+        <div>
+          <label>Tỷ lệ A</label>
+          <input id="ratioA" type="number" value="1" min="0" max="50" />
+        </div>
+        <div>
+          <label>Tỷ lệ B</label>
+          <input id="ratioB" type="number" value="1" min="0" max="50" />
+        </div>
+      </div>
+
+      <details id="advanced">
+        <summary>
+          <span>Tuỳ chọn nâng cao</span>
+          <span aria-hidden="true">▾</span>
+        </summary>
+
+        <div style="padding:12px 12px 4px; background:#fafafa;">
+          <div class="row two">
+            <div>
+              <label>Chọn bài A</label>
+              <select id="pickModeA">
+                <option value="SHUFFLE" selected>Ngẫu nhiên (Shuffle)</option>
+                <option value="ORDER">Giữ thứ tự playlist</option>
+              </select>
+            </div>
+            <div>
+              <label>Chọn bài B</label>
+              <select id="pickModeB">
+                <option value="SHUFFLE" selected>Ngẫu nhiên (Shuffle)</option>
+                <option value="ORDER">Giữ thứ tự playlist</option>
+              </select>
+            </div>
+          </div>
+
+          <label>Chế độ hiển thị playlist</label>
+          <select id="privacy">
+            <option value="PRIVATE" selected>Private</option>
+            <option value="UNLISTED">Unlisted</option>
+            <option value="PUBLIC">Public</option>
+          </select>
+
+          <label style="display:flex; gap:10px; align-items:center; font-weight:800;">
+            <input id="allowDuplicates" type="checkbox" checked style="width:auto; transform:scale(1.1);" />
+            Cho phép trùng bài khi lặp vòng để đủ số bài
+          </label>
+
+          <hr style="border:none; border-top:1px solid #eee; margin:12px 0;" />
+
+          <label>Ưu tiên của A</label>
+          <button type="button" class="btn secondary small" onclick="openPicker('A', false)">Chọn ưu tiên A</button>
+          <div id="priorityASummary" class="hint">Chưa chọn bài ưu tiên cho A.</div>
+
+          <div class="row two">
+            <div>
+              <label>Ưu tiên A phát đầu</label>
+              <select id="priorityHeadA_mode" onchange="onPriorityHeadModeChange_('A')">
+                <option value="OFF" selected>Tắt</option>
+                <option value="ALL">Phát tất cả</option>
+                <option value="CUSTOM">Tuỳ chọn…</option>
+              </select>
+              <input id="priorityHeadA" type="hidden" value="0" />
+              <div id="priorityHeadA_customRow" class="prioHeadCustomRow">
+                <input id="priorityHeadA_custom" type="number" value="3" min="1" max="9999" inputmode="numeric"
+                  placeholder="Nhập số bài ưu tiên phát đầu..." oninput="onPriorityHeadCustomInput_('A')" />
+              </div>
+            </div>
+
+            <div>
+              <label>Sau đó, lặp ưu tiên A mỗi N bài</label>
+              <input id="priorityEveryA" type="number" value="5" min="0" max="9999" />
+            </div>
+          </div>
+
+          <label>Ưu tiên của B</label>
+          <button type="button" class="btn secondary small" onclick="openPicker('B', false)">Chọn ưu tiên B</button>
+          <div id="priorityBSummary" class="hint">Chưa chọn bài ưu tiên cho B.</div>
+
+          <div class="row two">
+            <div>
+              <label>Ưu tiên B phát đầu</label>
+              <select id="priorityHeadB_mode" onchange="onPriorityHeadModeChange_('B')">
+                <option value="OFF" selected>Tắt</option>
+                <option value="ALL">Phát tất cả</option>
+                <option value="CUSTOM">Tuỳ chọn…</option>
+              </select>
+              <input id="priorityHeadB" type="hidden" value="0" />
+              <div id="priorityHeadB_customRow" class="prioHeadCustomRow">
+                <input id="priorityHeadB_custom" type="number" value="3" min="1" max="9999" inputmode="numeric"
+                  placeholder="Nhập số bài ưu tiên phát đầu..." oninput="onPriorityHeadCustomInput_('B')" />
+              </div>
+            </div>
+
+            <div>
+              <label>Sau đó, lặp ưu tiên B mỗi N bài</label>
+              <input id="priorityEveryB" type="number" value="15" min="0" max="9999" />
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <button id="createBtn" class="btn" onclick="create()">Tạo playlist mới</button>
+      <button type="button" class="btn secondary small" onclick="clearState_()">Xoá cấu hình đã lưu</button>
+
+      <div id="status" class="status"></div>
+      <button id="openBtn" class="btn secondary" style="display:none;" onclick="openPlaylist()">Mở playlist</button>
+    </div>
+  </div>
+
+  <!-- Picker overlay -->
+  <div id="pickerOverlay">
+    <div id="pickerSheet">
+      <div class="pickerStickyTop">
+        <div class="pickerHeader">
+          <div class="pickerHeaderLeft">
+            <div class="pickerTitle" id="pickerTitle">Chọn bài ưu tiên</div>
+            <div class="hint" id="pickerCacheInfo" style="margin-top:6px;"></div>
+          </div>
+
+          <div class="pickerActions">
+            <button class="pillBtn" onclick="pickerReload()">Tải lại</button>
+            <button class="pillBtn" onclick="pickerClearCache()">Xoá</button>
+            <button class="pillBtn" onclick="closePicker()">Đóng</button>
+          </div>
+        </div>
+
+        <div class="pickerRow">
+          <input id="pickerSearch" placeholder="Tìm theo tên bài..." oninput="renderPickerList()" />
+          <button class="pillBtn" onclick="toggleAll(true)">Chọn hết</button>
+          <button class="pillBtn" onclick="toggleAll(false)">Bỏ hết</button>
+        </div>
+      </div>
+
+      <div id="pickerScroll">
+        <div id="pickerList"></div>
+      </div>
+
+      <button id="pickerSaveBtn" class="btn" onclick="savePicker()">Lưu ưu tiên</button>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = "ytm_mixer_state_v1";
+    const CACHE_KEY_PREFIX = "ytm_mixer_playlist_cache_v1:";
+
+    let lastUrl = "";
+
+    let priorityAIds = [];
+    let priorityBIds = [];
+
+    let pickerMode = "A";
+    let pickerItems = [];
+    let pickerSelected = new Set();
+    let pickerFilteredItemsCache = [];
+    let pickerPlaylistLink = "";
+
+    function extractPlaylistKey_(urlOrId){
+      const s = String(urlOrId || "").trim();
+      if (!s) return "";
+      const m = s.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+      if (m) return m[1];
+      if (/^[a-zA-Z0-9_-]{10,}$/.test(s)) return s;
+      return s;
+    }
+
+    function cacheKeyForLocal_(playlistLink){
+      const key = extractPlaylistKey_(playlistLink);
+      return key ? (CACHE_KEY_PREFIX + key) : "";
+    }
+
+    function readPlaylistCacheLocal_(playlistLink){
+      const k = cacheKeyForLocal_(playlistLink);
+      if (!k) return null;
+      try{
+        const raw = localStorage.getItem(k);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      }catch(e){
+        return null;
+      }
+    }
+
+    function writePlaylistCacheLocal_(playlistLink, cacheObj){
+      const k = cacheKeyForLocal_(playlistLink);
+      if (!k) return;
+      try{ localStorage.setItem(k, JSON.stringify(cacheObj)); }catch(e){}
+    }
+
+    function deletePlaylistCacheLocal_(playlistLink){
+      const k = cacheKeyForLocal_(playlistLink);
+      if (!k) return;
+      try{ localStorage.removeItem(k); }catch(e){}
+    }
+
+    function formatAge_(iso){
+      if (!iso) return "";
+      const t = Date.parse(iso);
+      if (!Number.isFinite(t)) return "";
+      const diff = Date.now() - t;
+      const min = Math.floor(diff / 60000);
+      if (min < 1) return "vừa xong";
+      if (min < 60) return `${min} phút trước`;
+      const h = Math.floor(min / 60);
+      return `${h} giờ trước`;
+    }
+
+    function onPriorityHeadModeChange_(letter){
+      const modeEl = document.getElementById(`priorityHead${letter}_mode`);
+      const hiddenEl = document.getElementById(`priorityHead${letter}`);
+      const customRow = document.getElementById(`priorityHead${letter}_customRow`);
+      const customInput = document.getElementById(`priorityHead${letter}_custom`);
+
+      const mode = modeEl.value;
+      if (mode === "OFF") {
+        hiddenEl.value = "0";
+        if (customRow) customRow.style.display = "none";
+      } else if (mode === "ALL") {
+        hiddenEl.value = "-1";
+        if (customRow) customRow.style.display = "none";
+      } else {
+        if (customRow) customRow.style.display = "block";
+        const n = parseInt(customInput.value || "1", 10);
+        hiddenEl.value = String(Number.isFinite(n) && n > 0 ? n : 1);
+      }
+
+      saveStateLocal_();
+    }
+
+    function onPriorityHeadCustomInput_(letter){
+      const modeEl = document.getElementById(`priorityHead${letter}_mode`);
+      if (modeEl.value !== "CUSTOM") return;
+
+      const hiddenEl = document.getElementById(`priorityHead${letter}`);
+      const customInput = document.getElementById(`priorityHead${letter}_custom`);
+      const n = parseInt(customInput.value || "1", 10);
+      hiddenEl.value = String(Number.isFinite(n) && n > 0 ? n : 1);
+
+      saveStateLocal_();
+    }
+
+    function derivePriorityModeFromValue_(valueStr){
+      const n = parseInt(String(valueStr ?? ""), 10);
+      if (Number.isNaN(n)) return { mode: "OFF", custom: "1", hidden: "0" };
+      if (n === 0) return { mode: "OFF", custom: "1", hidden: "0" };
+      if (n === -1) return { mode: "ALL", custom: "1", hidden: "-1" };
+      if (n > 0) return { mode: "CUSTOM", custom: String(n), hidden: String(n) };
+      return { mode: "OFF", custom: "1", hidden: "0" };
+    }
+
+    function getState_() {
+      return {
+        playlistA: document.getElementById("playlistA")?.value || "",
+        playlistB: document.getElementById("playlistB")?.value || "",
+        title: document.getElementById("title")?.value || "",
+        totalItems: document.getElementById("totalItems")?.value || "40",
+        startWith: document.getElementById("startWith")?.value || "A",
+        ratioA: document.getElementById("ratioA")?.value || "1",
+        ratioB: document.getElementById("ratioB")?.value || "1",
+
+        pickModeA: document.getElementById("pickModeA")?.value || "SHUFFLE",
+        pickModeB: document.getElementById("pickModeB")?.value || "SHUFFLE",
+        privacy: document.getElementById("privacy")?.value || "PRIVATE",
+        allowDuplicates: !!document.getElementById("allowDuplicates")?.checked,
+
+        priorityHeadA: document.getElementById("priorityHeadA")?.value ?? "0",
+        priorityEveryA: document.getElementById("priorityEveryA")?.value ?? "5",
+        priorityHeadB: document.getElementById("priorityHeadB")?.value ?? "0",
+        priorityEveryB: document.getElementById("priorityEveryB")?.value ?? "0",
+
+        priorityHeadA_mode: document.getElementById("priorityHeadA_mode")?.value ?? "OFF",
+        priorityHeadA_custom: document.getElementById("priorityHeadA_custom")?.value ?? "1",
+        priorityHeadB_mode: document.getElementById("priorityHeadB_mode")?.value ?? "OFF",
+        priorityHeadB_custom: document.getElementById("priorityHeadB_custom")?.value ?? "1",
+
+        priorityAIds: Array.isArray(priorityAIds) ? priorityAIds : [],
+        priorityBIds: Array.isArray(priorityBIds) ? priorityBIds : [],
+
+        savedAt: new Date().toISOString(),
+      };
+    }
+
+    function applyState_(s) {
+      if (!s || typeof s !== "object") return;
+
+      const setVal = (id, v) => {
+        const el = document.getElementById(id);
+        if (!el || v === undefined || v === null) return;
+        el.value = String(v);
+      };
+      const setChecked = (id, v) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.checked = !!v;
+      };
+
+      setVal("playlistA", s.playlistA);
+      setVal("playlistB", s.playlistB);
+      setVal("title", s.title);
+      setVal("totalItems", s.totalItems);
+      setVal("startWith", s.startWith);
+      setVal("ratioA", s.ratioA);
+      setVal("ratioB", s.ratioB);
+
+      setVal("pickModeA", s.pickModeA);
+      setVal("pickModeB", s.pickModeB);
+      setVal("privacy", s.privacy);
+      setChecked("allowDuplicates", s.allowDuplicates);
+
+      const a = (s.priorityHeadA_mode || s.priorityHeadA_custom)
+        ? { mode: String(s.priorityHeadA_mode || "OFF"), custom: String(s.priorityHeadA_custom || "1"), hidden: String(s.priorityHeadA ?? "0") }
+        : derivePriorityModeFromValue_(s.priorityHeadA);
+
+      const b = (s.priorityHeadB_mode || s.priorityHeadB_custom)
+        ? { mode: String(s.priorityHeadB_mode || "OFF"), custom: String(s.priorityHeadB_custom || "1"), hidden: String(s.priorityHeadB ?? "0") }
+        : derivePriorityModeFromValue_(s.priorityHeadB);
+
+      setVal("priorityHeadA_mode", a.mode);
+      setVal("priorityHeadA_custom", a.custom);
+      setVal("priorityHeadA", a.hidden);
+
+      setVal("priorityHeadB_mode", b.mode);
+      setVal("priorityHeadB_custom", b.custom);
+      setVal("priorityHeadB", b.hidden);
+
+      onPriorityHeadModeChange_("A");
+      onPriorityHeadModeChange_("B");
+
+      setVal("priorityEveryA", s.priorityEveryA);
+      setVal("priorityEveryB", s.priorityEveryB);
+
+      priorityAIds = Array.isArray(s.priorityAIds) ? s.priorityAIds : [];
+      priorityBIds = Array.isArray(s.priorityBIds) ? s.priorityBIds : [];
+
+      updatePrioritySummary_();
+    }
+
+    function updatePrioritySummary_(){
+      const aSum = document.getElementById("priorityASummary");
+      const bSum = document.getElementById("priorityBSummary");
+      if (aSum) aSum.textContent = priorityAIds.length ? `Đã chọn ${priorityAIds.length} bài ưu tiên cho A.` : "Chưa chọn bài ưu tiên cho A.";
+      if (bSum) bSum.textContent = priorityBIds.length ? `Đã chọn ${priorityBIds.length} bài ưu tiên cho B.` : "Chưa chọn bài ưu tiên cho B.";
+    }
+
+    function saveStateLocal_() {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(getState_())); } catch (e) {}
+    }
+
+    function loadStateLocal_() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        applyState_(JSON.parse(raw));
+      } catch (e) {}
+    }
+
+    function clearState_() {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+        priorityAIds = [];
+        priorityBIds = [];
+        updatePrioritySummary_();
+
+        document.getElementById("priorityHeadA_mode").value = "OFF";
+        document.getElementById("priorityHeadB_mode").value = "OFF";
+        document.getElementById("priorityHeadA_custom").value = "3";
+        document.getElementById("priorityHeadB_custom").value = "3";
+        onPriorityHeadModeChange_("A");
+        onPriorityHeadModeChange_("B");
+      } catch (e) {}
+    }
+
+    function wireAutoSave_() {
+      const ids = [
+        "playlistA","playlistB","title","totalItems","startWith","ratioA","ratioB",
+        "pickModeA","pickModeB","privacy","allowDuplicates",
+        "priorityHeadA_mode","priorityHeadA_custom","priorityEveryA",
+        "priorityHeadB_mode","priorityHeadB_custom","priorityEveryB"
+      ];
+      ids.forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("input", saveStateLocal_);
+        el.addEventListener("change", saveStateLocal_);
+      });
+    }
+
+    function saveStateCloud_() {
+      const payload = getState_();
+      google.script.run
+        .withFailureHandler((err) => console.error("saveUserSettings error", err))
+        .saveUserSettings(payload);
+    }
+
+    function loadStateCloud_() {
+      google.script.run
+        .withSuccessHandler((res) => {
+          if (res && res.ok && res.data) {
+            applyState_(res.data);
+            saveStateLocal_();
+          }
+        })
+        .withFailureHandler((err) => console.error("loadUserSettings error", err))
+        .loadUserSettings();
+    }
+
+    function loadPlaylistCacheCloud_(playlistLink, onDone) {
+      google.script.run
+        .withSuccessHandler((res) => {
+          if (res && res.ok && res.data && Array.isArray(res.data.items)) onDone(null, res.data);
+          else onDone(null, null);
+        })
+        .withFailureHandler((err) => onDone(err, null))
+        .loadPlaylistCache({ playlist: playlistLink });
+    }
+
+    function savePlaylistCacheCloud_(playlistLink, items) {
+      const playlistKey = extractPlaylistKey_(playlistLink);
+      if (!playlistKey) return;
+      google.script.run
+        .withFailureHandler((err) => console.error("savePlaylistCache error", err))
+        .savePlaylistCache({
+          playlistKey,
+          fetchedAt: new Date().toISOString(),
+          items: items || []
+        });
+    }
+
+    function clearPlaylistCacheCloud_(playlistLink, onDone) {
+      google.script.run
+        .withSuccessHandler((res) => onDone && onDone(null, res))
+        .withFailureHandler((err) => onDone && onDone(err, null))
+        .clearPlaylistCache({ playlist: playlistLink });
+    }
+
+    function val(id){ return document.getElementById(id).value; }
+    function checked(id){ return document.getElementById(id).checked; }
+
+    function setStatus(html, isError=false) {
+      const el = document.getElementById('status');
+      el.style.display = 'block';
+      el.classList.toggle('error', isError);
+      el.innerHTML = html;
+    }
+
+    function setLoading(loading){
+      const btn = document.getElementById('createBtn');
+      btn.disabled = loading;
+      btn.textContent = loading ? "Đang tạo..." : "Tạo playlist mới";
+    }
+
+    function openPlaylist(){
+      if (lastUrl) window.location.href = lastUrl;
+    }
+
+    function pickerReload(){
+      if (!pickerPlaylistLink) return;
+      openPicker(pickerMode, true);
+    }
+
+    function pickerClearCache(){
+      if (!pickerPlaylistLink) return;
+
+      const cacheInfoEl = document.getElementById("pickerCacheInfo");
+      if (cacheInfoEl) cacheInfoEl.textContent = "Đang xoá cache...";
+
+      deletePlaylistCacheLocal_(pickerPlaylistLink);
+      clearPlaylistCacheCloud_(pickerPlaylistLink, (err) => {
+        if (err) {
+          console.error(err);
+          if (cacheInfoEl) cacheInfoEl.textContent = "Xoá cache cloud thất bại (xem console).";
+          return;
+        }
+        if (cacheInfoEl) cacheInfoEl.textContent = "Đã xoá cache (máy + cloud).";
+        pickerItems = [];
+        document.getElementById('pickerList').innerHTML = `<div class="hint">Đã xoá cache. Bấm “Tải lại” để tải mới.</div>`;
+      });
+    }
+
+    function openPicker(mode, forceReload){
+      pickerMode = mode;
+      const playlistLink = (mode === "A") ? val('playlistA') : val('playlistB');
+      pickerPlaylistLink = playlistLink;
+
+      if (!playlistLink.trim()){
+        setStatus("Bạn cần nhập link Playlist " + mode + " trước đã.", true);
+        return;
+      }
+
+      document.getElementById('pickerTitle').textContent = `Chọn bài ưu tiên cho ${mode}`;
+      document.getElementById('pickerOverlay').style.display = 'block';
+      document.getElementById('pickerSearch').value = "";
+      document.getElementById('pickerList').innerHTML = `<div class="hint">Đang chuẩn bị...</div>`;
+
+      pickerSelected = new Set(mode === "A" ? priorityAIds : priorityBIds);
+
+      const cacheInfoEl = document.getElementById("pickerCacheInfo");
+
+      const cachedLocal = forceReload ? null : readPlaylistCacheLocal_(playlistLink);
+      if (cachedLocal && Array.isArray(cachedLocal.items) && cachedLocal.items.length) {
+        pickerItems = cachedLocal.items;
+        if (cacheInfoEl) cacheInfoEl.textContent = `Dùng cache máy (${pickerItems.length} bài, tải ${formatAge_(cachedLocal.fetchedAt)}).`;
+        renderPickerList();
+        return;
+      }
+
+      if (!forceReload) {
+        if (cacheInfoEl) cacheInfoEl.textContent = "Không có cache máy. Đang tìm cache cloud...";
+        loadPlaylistCacheCloud_(playlistLink, (err, cachedCloud) => {
+          if (err) console.error(err);
+
+          if (cachedCloud && Array.isArray(cachedCloud.items) && cachedCloud.items.length) {
+            pickerItems = cachedCloud.items;
+
+            writePlaylistCacheLocal_(playlistLink, {
+              playlistKey: extractPlaylistKey_(playlistLink),
+              fetchedAt: cachedCloud.fetchedAt || new Date().toISOString(),
+              items: pickerItems,
+            });
+
+            if (cacheInfoEl) cacheInfoEl.textContent = `Dùng cache cloud (${pickerItems.length} bài, tải ${formatAge_(cachedCloud.fetchedAt)}).`;
+            renderPickerList();
+            return;
+          }
+
+          fetchPickerFromApi_();
+        });
+        return;
+      }
+
+      fetchPickerFromApi_();
+
+      function fetchPickerFromApi_() {
+        if (cacheInfoEl) cacheInfoEl.textContent = "Đang tải từ YouTube (tốn request)...";
+
+        google.script.run
+          .withSuccessHandler((res) => {
+            pickerItems = (res && res.items) ? res.items : [];
+
+            writePlaylistCacheLocal_(playlistLink, {
+              playlistKey: extractPlaylistKey_(playlistLink),
+              fetchedAt: new Date().toISOString(),
+              items: pickerItems,
+            });
+            savePlaylistCacheCloud_(playlistLink, pickerItems);
+
+            if (cacheInfoEl) cacheInfoEl.textContent = `Đã tải mới (${pickerItems.length} bài).`;
+            renderPickerList();
+          })
+          .withFailureHandler((err) => {
+            document.getElementById('pickerList').innerHTML =
+              `<div class="error">Lỗi tải playlist: ${escapeHtml(err.message || err)}</div>`;
+            if (cacheInfoEl) cacheInfoEl.textContent = "";
+          })
+          .getPlaylistItemsForPicker({ playlist: playlistLink, maxItems: 250 });
+      }
+    }
+
+    function closePicker(){
+      document.getElementById('pickerOverlay').style.display = 'none';
+    }
+
+    function getFilteredItems_(){
+      const q = document.getElementById('pickerSearch').value.trim().toLowerCase();
+      const filtered = q
+        ? pickerItems.filter(it => (it.title || '').toLowerCase().includes(q))
+        : pickerItems;
+      pickerFilteredItemsCache = filtered;
+      return filtered;
+    }
+
+    function renderPickerList(){
+      const list = document.getElementById('pickerList');
+      const filtered = getFilteredItems_();
+
+      if (!filtered.length){
+        list.innerHTML = `<div class="hint">Không có bài nào (hoặc không khớp tìm kiếm).</div>`;
+        return;
+      }
+
+      list.innerHTML = filtered.map(it => {
+        const isOn = pickerSelected.has(it.videoId);
+        const safeTitle = escapeHtml(it.title || it.videoId);
+        const thumb = it.thumb ? `<img src="${it.thumb}" alt="">` : `<img alt="">`;
+
+        return `
+          <div class="song">
+            <input type="checkbox" data-vid="${it.videoId}" ${isOn ? "checked" : ""} onchange="toggleOne(event)" style="width:auto; transform:scale(1.2);">
+            ${thumb}
+            <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+              <div class="songTitle">${safeTitle}</div>
+              <div class="songMeta">${it.videoId}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleOne(e){
+      const vid = e.target.getAttribute('data-vid');
+      if (!vid) return;
+      if (e.target.checked) pickerSelected.add(vid);
+      else pickerSelected.delete(vid);
+    }
+
+    function toggleAll(on){
+      const filtered = pickerFilteredItemsCache.length ? pickerFilteredItemsCache : getFilteredItems_();
+      filtered.forEach(it => {
+        if (on) pickerSelected.add(it.videoId);
+        else pickerSelected.delete(it.videoId);
+      });
+      renderPickerList();
+    }
+
+    function savePicker(){
+      const arr = Array.from(pickerSelected);
+      if (pickerMode === "A") priorityAIds = arr;
+      else priorityBIds = arr;
+
+      updatePrioritySummary_();
+      closePicker();
+
+      saveStateLocal_();
+      saveStateCloud_();
+    }
+
+    function create() {
+      saveStateLocal_();
+      saveStateCloud_();
+
+      document.getElementById('openBtn').style.display = 'none';
+      lastUrl = "";
+      setLoading(true);
+      setStatus("Đang tạo playlist... (có thể mất 10–60 giây)");
+
+      const params = {
+        playlistA: val('playlistA'),
+        playlistB: val('playlistB'),
+        title: val('title'),
+        totalItems: val('totalItems'),
+        startWith: val('startWith'),
+        ratioA: val('ratioA'),
+        ratioB: val('ratioB'),
+        pickModeA: val('pickModeA') || "SHUFFLE",
+        pickModeB: val('pickModeB') || "SHUFFLE",
+        privacy: val('privacy') || "PRIVATE",
+        allowDuplicates: checked('allowDuplicates'),
+
+        priorityA: priorityAIds,
+        priorityB: priorityBIds,
+        priorityHeadA: document.getElementById("priorityHeadA").value,
+        priorityHeadB: document.getElementById("priorityHeadB").value,
+        priorityEveryA: val('priorityEveryA'),
+        priorityEveryB: val('priorityEveryB'),
+      };
+
+      google.script.run
+        .withSuccessHandler((res) => {
+          lastUrl = res.url;
+          setLoading(false);
+          setStatus(
+            `Xong: <b>${escapeHtml(res.title)}</b><br/>` +
+            `Số bài: ${res.count} (A=${res.countA ?? "?"}, B=${res.countB ?? "?"})<br/>` +
+            `Link: <a href="${res.url}" target="_blank" rel="noopener">${res.url}</a><br/>`
+          );
+          document.getElementById('openBtn').style.display = 'block';
+        })
+        .withFailureHandler((err) => {
+          setLoading(false);
+          setStatus(`<b>Lỗi:</b> ${escapeHtml(err.message || err)}`, true);
+        })
+        .createMixedPlaylist(params);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    window.addEventListener("load", () => {
+      onPriorityHeadModeChange_("A");
+      onPriorityHeadModeChange_("B");
+
+      loadStateLocal_();
+      wireAutoSave_();
+      updatePrioritySummary_();
+      loadStateCloud_();
+    });
+  </script>
+</body>
+</html>
