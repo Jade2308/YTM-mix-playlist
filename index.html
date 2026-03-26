@@ -686,10 +686,18 @@
         .withSuccessHandler((res) => {
           lastUrl = res.url;
           setLoading(false);
+          let failedHtml = "";
+          if (res.failedCount) {
+            const rows = (res.failedErrors || []).map(f =>
+              `<li><code>${escapeHtml(f.videoId)}</code> — ${escapeHtml(f.error)}</li>`
+            ).join("");
+            failedHtml = `<br/>⚠️ Bài bị lỗi (${res.failedCount}):<ul style="margin:4px 0 0 16px;padding:0">${rows}</ul>`;
+          }
           setStatus(
             `Xong: <b>${escapeHtml(res.title)}</b><br/>` +
             `Số bài: ${res.count} (A=${res.countA ?? "?"}, B=${res.countB ?? "?"}${res.failedCount ? `, lỗi=${res.failedCount}` : ""})<br/>` +
-            `Link: <a href="${res.url}" target="_blank" rel="noopener">${res.url}</a><br/>`
+            `Link: <a href="${res.url}" target="_blank" rel="noopener">${res.url}</a>` +
+            failedHtml
           );
           document.getElementById('openBtn').style.display = 'block';
         })
