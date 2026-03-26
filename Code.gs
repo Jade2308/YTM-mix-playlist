@@ -12,6 +12,8 @@
 
 const SETTINGS_KEY_ = "YTM_MIXER_SETTINGS_V1";
 const PLAYLIST_CACHE_PREFIX_ = "YTM_MIXER_PL_CACHE_V1:";
+const INSERT_DELAY_MS_ = 100;   // pause between playlist item insertions to avoid rate limiting
+const RETRY_DELAY_MS_ = 1500;   // wait before retrying a failed insertion
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile("Index")
@@ -188,9 +190,8 @@ function createMixedPlaylist(params) {
     priorityHead: priorityHeadB,
   });
 
-  const mixed = buildMixUsingPickers_(aPicker, bPicker, total, ratioA, ratioB, start);
-
-  const stats = countABStats_(mixed, aSet, bSet);
+  const mixResult = buildMixUsingPickers_(aPicker, bPicker, total, ratioA, ratioB, start);
+  const mixed = mixResult.videoIds;
 
   const description =
     `Auto-mixed ${ts}\n` +
@@ -200,44 +201,70 @@ function createMixedPlaylist(params) {
     `priorityA(count=${priorityA.length}, head=${priorityHeadA}, every=${priorityEveryA})\n` +
     `priorityB(count=${priorityB.length}, head=${priorityHeadB}, every=${priorityEveryB})\n` +
     `repeatIfShort=true, allowDuplicates=${allowDuplicates}\n` +
-    `stats: countA=${stats.countA}, countB=${stats.countB}, unknown=${stats.unknown}\n`;
+    `stats: countA=${mixResult.countA}, countB=${mixResult.countB}\n`;
 
   const newPlaylistId = createPlaylist_(title, description, privacy);
-  for (const videoId of mixed) addVideoToPlaylist_(newPlaylistId, videoId);
+
+  let addedCount = 0, failedCount = 0;
+  for (const videoId of mixed) {
+    try {
+      addVideoToPlaylist_(newPlaylistId, videoId);
+      addedCount++;
+    } catch (e) {
+      // Retry once after a short delay (handles transient API errors / rate limits)
+      try {
+        Utilities.sleep(RETRY_DELAY_MS_);
+        addVideoToPlaylist_(newPlaylistId, videoId);
+        addedCount++;
+      } catch (e2) {
+        failedCount++;
+      }
+    }
+    Utilities.sleep(INSERT_DELAY_MS_); // small pause between insertions to avoid rate limiting
+  }
 
   return {
     playlistId: newPlaylistId,
     url: `https://www.youtube.com/playlist?list=${newPlaylistId}`,
-    count: mixed.length,
+    count: addedCount,
     title,
     createdAt: ts,
     priorityASelected: priorityA.length,
     priorityBSelected: priorityB.length,
-    countA: stats.countA,
-    countB: stats.countB,
-    unknown: stats.unknown,
+    countA: mixResult.countA,
+    countB: mixResult.countB,
+    failedCount,
     allowDuplicates,
   };
 }
 
 /** ---------- Mix builder ---------- */
 
+// Returns { videoIds, countA, countB } — counts are based on which picker was used,
+// not on set membership, so overlap videos are counted correctly.
 function buildMixUsingPickers_(aPicker, bPicker, total, ratioA, ratioB, startWith) {
-  const out = [];
+  const videoIds = [];
   let turn = startWith;
+  let countA = 0, countB = 0;
 
-  while (out.length < total) {
+  while (videoIds.length < total) {
     if (turn === "A") {
       if (ratioA === 0) { turn = "B"; continue; }
-      for (let k = 0; k < ratioA && out.length < total; k++) out.push(aPicker.next());
+      for (let k = 0; k < ratioA && videoIds.length < total; k++) {
+        videoIds.push(aPicker.next());
+        countA++;
+      }
       turn = "B";
     } else {
       if (ratioB === 0) { turn = "A"; continue; }
-      for (let k = 0; k < ratioB && out.length < total; k++) out.push(bPicker.next());
+      for (let k = 0; k < ratioB && videoIds.length < total; k++) {
+        videoIds.push(bPicker.next());
+        countB++;
+      }
       turn = "A";
     }
   }
-  return out;
+  return { videoIds, countA, countB };
 }
 
 /** ---------- Picker (option 2 spread full priority list) ---------- */

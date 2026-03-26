@@ -688,7 +688,7 @@
           setLoading(false);
           setStatus(
             `Xong: <b>${escapeHtml(res.title)}</b><br/>` +
-            `Số bài: ${res.count} (A=${res.countA ?? "?"}, B=${res.countB ?? "?"})<br/>` +
+            `Số bài: ${res.count} (A=${res.countA ?? "?"}, B=${res.countB ?? "?"}${res.failedCount ? `, lỗi=${res.failedCount}` : ""})<br/>` +
             `Link: <a href="${res.url}" target="_blank" rel="noopener">${res.url}</a><br/>`
           );
           document.getElementById('openBtn').style.display = 'block';
