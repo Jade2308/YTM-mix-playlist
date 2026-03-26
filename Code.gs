@@ -206,6 +206,7 @@ function createMixedPlaylist(params) {
   const newPlaylistId = createPlaylist_(title, description, privacy);
 
   let addedCount = 0, failedCount = 0;
+  const failedErrors = [];
   for (const videoId of mixed) {
     try {
       addVideoToPlaylist_(newPlaylistId, videoId);
@@ -218,6 +219,7 @@ function createMixedPlaylist(params) {
         addedCount++;
       } catch (e2) {
         failedCount++;
+        failedErrors.push({ videoId, error: e2.message || String(e2) });
       }
     }
     Utilities.sleep(INSERT_DELAY_MS_); // small pause between insertions to avoid rate limiting
@@ -234,6 +236,7 @@ function createMixedPlaylist(params) {
     countA: mixResult.countA,
     countB: mixResult.countB,
     failedCount,
+    failedErrors,
     allowDuplicates,
   };
 }
