@@ -566,8 +566,8 @@
       if (!pickerPlaylistLink) return;
       const cacheInfoEl = document.getElementById("pickerCacheInfo");
       if (cacheInfoEl) cacheInfoEl.textContent = "Đang xoá cache...";
-      deletePlaylistCacheLocal_(playlistLink);
-      clearPlaylistCacheCloud_(playlistLink, (err) => {
+      deletePlaylistCacheLocal_(pickerPlaylistLink);
+      clearPlaylistCacheCloud_(pickerPlaylistLink, (err) => {
         if (err) { console.error(err); if (cacheInfoEl) cacheInfoEl.textContent = "Xoá cache cloud thất bại (xem console)."; return; }
         if (cacheInfoEl) cacheInfoEl.textContent = "Đã xoá cache (máy + cloud).";
         pickerItems = [];

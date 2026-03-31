@@ -7,6 +7,12 @@
  *    - Settings (form + priority selections) via UserProperties
  *    - Playlist picker cache (items list) via UserProperties (cross-device)
  *
+ * Cache optimization:
+ *    - GAS CacheService (6h): videoIds from playlist A/B to avoid repeated YouTube API calls
+ *    - LocalStorage (browser): picker items (title + thumbnail) for fast UI load
+ *    - UserProperties (cloud): picker items sync across devices
+ *    - Priority: GAS Cache > YouTube API
+ *
  * Requirement: Enable Advanced Google Service: YouTube Data API
  */
 
@@ -434,6 +440,17 @@ function extractVideoId_(s) {
 /** ---------- YouTube API ---------- */
 
 function getPlaylistVideoIds_(playlistId) {
+  // ✅ Step 1: Check GAS CacheService (6 hours)
+  const cacheKey = "PLAYLIST_VIDEOS:" + playlistId;
+  const cached = CacheService.getUserCache().get(cacheKey);
+  
+  if (cached) {
+    Logger.log(`✅ Cache hit for ${playlistId} (${cached.length} videos)`);
+    return JSON.parse(cached);
+  }
+  
+  // Step 2: Cache miss => load from YouTube API
+  Logger.log(`📥 Loading from YouTube API: ${playlistId}`);
   const out = [];
   let pageToken;
   do {
@@ -449,6 +466,11 @@ function getPlaylistVideoIds_(playlistId) {
     }
     pageToken = resp.nextPageToken;
   } while (pageToken);
+  
+  // ✅ Step 3: Save to cache for 6 hours (21600 seconds)
+  CacheService.getUserCache().put(cacheKey, JSON.stringify(out), 21600);
+  Logger.log(`💾 Cached ${out.length} videos for 6 hours`);
+  
   return out;
 }
 
