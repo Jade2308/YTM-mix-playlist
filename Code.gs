@@ -45,6 +45,219 @@ function loadUserSettings() {
   }
 }
 
+/**
+ * Khôi phục danh sách ưu tiên A đã lưu (kể cả khi playlist A đã xoá).
+ * Trả về videoId + title/thumb nếu còn trong cloud cache.
+ */
+function recoverPriorityAFromStorage() {
+  const props = PropertiesService.getUserProperties();
+  const raw = props.getProperty(SETTINGS_KEY_);
+  if (!raw) {
+    return { ok: false, error: "Không tìm thấy cấu hình đã lưu trong UserProperties." };
+  }
+
+  let settings;
+  try {
+    settings = JSON.parse(raw);
+  } catch (e) {
+    return { ok: false, error: "Cấu hình đã lưu bị lỗi JSON." };
+  }
+
+  const priorityAIds = Array.isArray(settings.priorityAIds)
+    ? uniquePreserveOrder_(settings.priorityAIds.map(v => String(v || "").trim()).filter(Boolean))
+    : [];
+
+  const playlistAInput = String(settings.playlistA || "").trim();
+  let playlistAKey = "";
+  try { playlistAKey = playlistAInput ? normalizePlaylistId_(playlistAInput) : ""; } catch (e) {}
+
+  const metaIndex = buildVideoMetaIndexFromCloudCache_(playlistAKey);
+  const items = priorityAIds.map((videoId, idx) => {
+    const meta = metaIndex[videoId] || {};
+    return {
+      order: idx + 1,
+      videoId,
+      title: meta.title || "",
+      thumb: meta.thumb || "",
+    };
+  });
+
+  return {
+    ok: true,
+    playlistAInput,
+    playlistAKey,
+    savedAt: settings.savedAt || "",
+    count: items.length,
+    items,
+    note: "Nếu title trống thì chỉ còn videoId (cache tiêu đề không còn).",
+  };
+}
+
+/**
+ * Xuất nhanh danh sách ưu tiên A ra text để copy/paste.
+ */
+function recoverPriorityAAsText() {
+  const res = recoverPriorityAFromStorage();
+  if (!res.ok) return res;
+
+  const lines = res.items.map(it => {
+    const title = it.title ? ` - ${it.title}` : "";
+    return `${it.videoId}${title}`;
+  });
+
+  return {
+    ok: true,
+    count: res.count,
+    text: lines.join("\n"),
+    items: res.items,
+  };
+}
+
+/**
+ * Chạy hàm này trong Apps Script để in danh sách ưu tiên A ra Logs.
+ */
+function logRecoveredPriorityA() {
+  const res = recoverPriorityAAsText();
+  if (!res.ok) {
+    Logger.log("recoverPriorityAAsText error: %s", res.error || "unknown");
+    return res;
+  }
+  Logger.log("Recovered Priority A count: %s", res.count);
+  Logger.log("%s", res.text || "");
+  return res;
+}
+
+/**
+ * Debug tổng hợp: in cấu hình đã lưu + danh sách Priority A ra Logs.
+ */
+function debugDumpSavedStateAndPriorityA() {
+  const settingsRes = loadUserSettings();
+  Logger.log("loadUserSettings.ok = %s", settingsRes && settingsRes.ok);
+  if (!settingsRes || !settingsRes.ok) {
+    Logger.log("loadUserSettings.error = %s", settingsRes && settingsRes.error ? settingsRes.error : "unknown");
+  } else if (!settingsRes.data) {
+    Logger.log("Không có dữ liệu settings trong UserProperties.");
+  } else {
+    const s = settingsRes.data;
+    Logger.log("savedAt = %s", s.savedAt || "");
+    Logger.log("playlistA = %s", s.playlistA || "");
+    Logger.log("priorityAIds.count = %s", Array.isArray(s.priorityAIds) ? s.priorityAIds.length : 0);
+  }
+
+  const recoverRes = recoverPriorityAAsText();
+  Logger.log("recoverPriorityAAsText.ok = %s", recoverRes && recoverRes.ok);
+  if (!recoverRes || !recoverRes.ok) {
+    Logger.log("recoverPriorityAAsText.error = %s", recoverRes && recoverRes.error ? recoverRes.error : "unknown");
+  } else {
+    Logger.log("Recovered Priority A count: %s", recoverRes.count || 0);
+    Logger.log("%s", recoverRes.text || "");
+  }
+
+  return { settingsRes, recoverRes };
+}
+
+/**
+ * Fallback: nếu priorityAIds rỗng thì lấy toàn bộ item còn trong cloud cache của playlistA.
+ */
+function recoverPlaylistAItemsFromCacheFallback() {
+  const settingsRes = loadUserSettings();
+  if (!settingsRes || !settingsRes.ok || !settingsRes.data) {
+    return { ok: false, error: "Không có settings để xác định playlistA." };
+  }
+
+  const playlistAInput = String(settingsRes.data.playlistA || "").trim();
+  if (!playlistAInput) {
+    return { ok: false, error: "settings không có playlistA." };
+  }
+
+  let playlistAKey = "";
+  try {
+    playlistAKey = normalizePlaylistId_(playlistAInput);
+  } catch (e) {
+    return { ok: false, error: "Không parse được playlistA từ settings." };
+  }
+
+  const key = PLAYLIST_CACHE_PREFIX_ + playlistAKey;
+  const raw = PropertiesService.getUserProperties().getProperty(key);
+  if (!raw) {
+    return { ok: false, error: `Không còn cloud cache cho key: ${key}` };
+  }
+
+  try {
+    const obj = JSON.parse(raw);
+    const items = Array.isArray(obj.items) ? obj.items : [];
+    const normalized = items
+      .map((it, i) => ({
+        order: i + 1,
+        videoId: String((it && it.videoId) || "").trim(),
+        title: String((it && it.title) || ""),
+        thumb: String((it && it.thumb) || ""),
+      }))
+      .filter(it => !!it.videoId);
+
+    return {
+      ok: true,
+      playlistAInput,
+      playlistAKey,
+      cacheFetchedAt: obj.fetchedAt || "",
+      count: normalized.length,
+      items: normalized,
+      note: "Đây là toàn bộ item cache của playlistA, không phải riêng danh sách priority đã chọn.",
+    };
+  } catch (e) {
+    return { ok: false, error: "Cloud cache bị lỗi JSON." };
+  }
+}
+
+function logRecoverPlaylistAItemsFromCacheFallback() {
+  const res = recoverPlaylistAItemsFromCacheFallback();
+  Logger.log("recoverPlaylistAItemsFromCacheFallback.ok = %s", res && res.ok);
+  if (!res || !res.ok) {
+    Logger.log("recoverPlaylistAItemsFromCacheFallback.error = %s", res && res.error ? res.error : "unknown");
+    return res;
+  }
+
+  Logger.log("playlistAKey = %s", res.playlistAKey || "");
+  Logger.log("cacheFetchedAt = %s", res.cacheFetchedAt || "");
+  Logger.log("cached items count = %s", res.count || 0);
+  const text = (res.items || []).map(it => `${it.videoId}${it.title ? ` - ${it.title}` : ""}`).join("\n");
+  Logger.log("%s", text);
+  return res;
+}
+
+function buildVideoMetaIndexFromCloudCache_(playlistAKey) {
+  const props = PropertiesService.getUserProperties();
+  const all = props.getProperties() || {};
+
+  const keys = Object.keys(all).filter(k => k.indexOf(PLAYLIST_CACHE_PREFIX_) === 0);
+  const preferredKey = playlistAKey ? (PLAYLIST_CACHE_PREFIX_ + playlistAKey) : "";
+
+  const orderedKeys = [];
+  if (preferredKey && all[preferredKey]) orderedKeys.push(preferredKey);
+  for (const k of keys) {
+    if (k !== preferredKey) orderedKeys.push(k);
+  }
+
+  const index = {};
+  for (const k of orderedKeys) {
+    try {
+      const obj = JSON.parse(all[k] || "{}");
+      const arr = Array.isArray(obj.items) ? obj.items : [];
+      for (const it of arr) {
+        const videoId = String((it && it.videoId) || "").trim();
+        if (!videoId || index[videoId]) continue;
+        index[videoId] = {
+          title: String((it && it.title) || ""),
+          thumb: String((it && it.thumb) || ""),
+        };
+      }
+    } catch (e) {
+      // skip broken cache entry
+    }
+  }
+  return index;
+}
+
 /** ---------- Cloud playlist picker cache (cross-device) ---------- */
 // payload: { playlistKey: string, fetchedAt: string, items: [{videoId,title,thumb}] }
 function savePlaylistCache(payload) {
@@ -94,33 +307,37 @@ function getPlaylistItemsForPicker(params) {
   const items = [];
   let pageToken;
 
-  do {
-    const resp = YouTube.PlaylistItems.list("snippet,contentDetails", {
-      playlistId,
-      maxResults: 50,
-      pageToken,
-    });
+  try {
+    do {
+      const resp = YouTube.PlaylistItems.list("snippet,contentDetails", {
+        playlistId,
+        maxResults: 50,
+        pageToken,
+      });
 
-    for (const it of (resp.items || [])) {
-      const videoId = it.contentDetails && it.contentDetails.videoId;
-      const sn = it.snippet || {};
-      const title = sn.title || "";
-      const thumbs = sn.thumbnails || {};
-      const thumb =
-        (thumbs.medium && thumbs.medium.url) ||
-        (thumbs.default && thumbs.default.url) ||
-        (thumbs.high && thumbs.high.url) ||
-        "";
+      for (const it of (resp.items || [])) {
+        const videoId = it.contentDetails && it.contentDetails.videoId;
+        const sn = it.snippet || {};
+        const title = sn.title || "";
+        const thumbs = sn.thumbnails || {};
+        const thumb =
+          (thumbs.medium && thumbs.medium.url) ||
+          (thumbs.default && thumbs.default.url) ||
+          (thumbs.high && thumbs.high.url) ||
+          "";
 
-      if (!videoId) continue;
-      if (title === "Private video" || title === "Deleted video") continue;
+        if (!videoId) continue;
+        if (title === "Private video" || title === "Deleted video") continue;
 
-      items.push({ videoId, title, thumb });
-      if (items.length >= maxItems) break;
-    }
+        items.push({ videoId, title, thumb });
+        if (items.length >= maxItems) break;
+      }
 
-    pageToken = (resp.nextPageToken && items.length < maxItems) ? resp.nextPageToken : null;
-  } while (pageToken);
+      pageToken = (resp.nextPageToken && items.length < maxItems) ? resp.nextPageToken : null;
+    } while (pageToken);
+  } catch (e) {
+    throw new Error(formatPlaylistApiError_(e, playlistId));
+  }
 
   return { playlistId, items };
 }
@@ -453,19 +670,23 @@ function getPlaylistVideoIds_(playlistId) {
   Logger.log(`📥 Loading from YouTube API: ${playlistId}`);
   const out = [];
   let pageToken;
-  do {
-    const resp = YouTube.PlaylistItems.list("contentDetails", {
-      playlistId,
-      maxResults: 50,
-      pageToken,
-    });
-    const items = resp.items || [];
-    for (const it of items) {
-      const vid = it.contentDetails && it.contentDetails.videoId;
-      if (vid) out.push(vid);
-    }
-    pageToken = resp.nextPageToken;
-  } while (pageToken);
+  try {
+    do {
+      const resp = YouTube.PlaylistItems.list("contentDetails", {
+        playlistId,
+        maxResults: 50,
+        pageToken,
+      });
+      const items = resp.items || [];
+      for (const it of items) {
+        const vid = it.contentDetails && it.contentDetails.videoId;
+        if (vid) out.push(vid);
+      }
+      pageToken = resp.nextPageToken;
+    } while (pageToken);
+  } catch (e) {
+    throw new Error(formatPlaylistApiError_(e, playlistId));
+  }
   
   // ✅ Step 3: Save to cache for 6 hours (21600 seconds)
   CacheService.getUserCache().put(cacheKey, JSON.stringify(out), 21600);
@@ -492,12 +713,125 @@ function addVideoToPlaylist_(playlistId, videoId) {
 /** ---------- Helpers ---------- */
 
 function normalizePlaylistId_(input) {
-  const s = String(input || "").trim();
+  const s = sanitizeText_(input);
   if (!s) throw new Error("Bạn chưa nhập playlist.");
-  const m = s.match(/[?&]list=([a-zA-Z0-9_-]+)/);
-  if (m) return m[1];
-  if (/^[a-zA-Z0-9_-]+$/.test(s)) return s;
+
+  const candidates = [s, safeDecodeURIComponent_(s)];
+  for (const c of candidates) {
+    const byList = extractListParam_(c);
+    if (byList) return byList;
+
+    const byBrowse = extractBrowsePlaylistId_(c);
+    if (byBrowse) return byBrowse;
+
+    const byDirect = normalizeDirectPlaylistId_(c);
+    if (byDirect) return byDirect;
+  }
+
   throw new Error("Không đọc được playlistId. Hãy dán link có ?list= hoặc dán playlistId.");
+}
+
+function sanitizeText_(input) {
+  return String(input || "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim()
+    .replace(/^<|>$/g, "");
+}
+
+function safeDecodeURIComponent_(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch (e) {
+    return s;
+  }
+}
+
+function extractListParam_(s) {
+  const m = String(s || "").match(/[?&]list=([a-zA-Z0-9_-]+)/i);
+  return m ? m[1] : "";
+}
+
+function extractBrowsePlaylistId_(s) {
+  const m = String(s || "").match(/\/browse\/([a-zA-Z0-9_-]+)/i);
+  if (!m) return "";
+  return normalizeDirectPlaylistId_(m[1]);
+}
+
+function normalizeDirectPlaylistId_(s) {
+  const id = String(s || "").trim();
+  if (!/^[a-zA-Z0-9_-]{10,}$/.test(id)) return "";
+  if (id.startsWith("VL") && /^[a-zA-Z0-9_-]{10,}$/.test(id.slice(2))) return id.slice(2);
+  return id;
+}
+
+function formatPlaylistApiError_(error, playlistId) {
+  const msg = (error && error.message) ? String(error.message) : String(error || "Lỗi không xác định.");
+  if (/playlistId.*cannot be found/i.test(msg) || /playlistNotFound|notFound/i.test(msg)) {
+    const authHint = getAuthorizedChannelHint_();
+    return (
+      `Không tìm thấy playlist: ${playlistId}. ` +
+      `Nguyên nhân thường gặp: (1) playlist là Private và tài khoản đang chạy Web App không phải chủ playlist, ` +
+      `(2) bạn đang dán playlist kiểu Mix/Radio tự động của YouTube Music (API không đọc được), ` +
+      `(3) playlist đã xoá hoặc đổi quyền truy cập. ` +
+      `Hãy thử đặt playlist nguồn thành Unlisted/Public để kiểm tra nhanh. ${authHint}`
+    );
+  }
+  return `Lỗi đọc playlist ${playlistId}: ${msg}`;
+}
+
+function getAuthorizedChannelHint_() {
+  try {
+    const me = YouTube.Channels.list("snippet", { mine: true, maxResults: 1 });
+    const ch = me && me.items && me.items[0];
+    const title = ch && ch.snippet && ch.snippet.title;
+    const id = ch && ch.id;
+    if (title || id) {
+      return `Tài khoản API hiện tại: ${title || "(không có tên kênh)"}${id ? ` (${id})` : ""}.`;
+    }
+  } catch (e) {}
+  return "Không xác định được kênh YouTube đang dùng để gọi API.";
+}
+
+/**
+ * Debug nhanh quyền truy cập playlist.
+ * params: { playlist: <link hoặc id> }
+ */
+function debugPlaylistAccess(params) {
+  if (!params || !params.playlist) throw new Error("Thiếu playlist.");
+  const playlistId = normalizePlaylistId_(params.playlist);
+
+  const result = {
+    playlistId,
+    channelHint: getAuthorizedChannelHint_(),
+    playlistReadable: false,
+    itemsReadable: false,
+    itemCountSample: 0,
+    title: "",
+    privacyStatus: "",
+    rawError: "",
+  };
+
+  try {
+    const p = YouTube.Playlists.list("snippet,status,contentDetails", { id: playlistId, maxResults: 1 });
+    const pl = p && p.items && p.items[0];
+    if (pl) {
+      result.playlistReadable = true;
+      result.title = (pl.snippet && pl.snippet.title) || "";
+      result.privacyStatus = (pl.status && pl.status.privacyStatus) || "";
+    }
+  } catch (e) {
+    result.rawError = e && e.message ? String(e.message) : String(e);
+  }
+
+  try {
+    const it = YouTube.PlaylistItems.list("contentDetails", { playlistId, maxResults: 5 });
+    result.itemsReadable = true;
+    result.itemCountSample = (it && it.items && it.items.length) ? it.items.length : 0;
+  } catch (e) {
+    result.rawError = result.rawError || (e && e.message ? String(e.message) : String(e));
+  }
+
+  return result;
 }
 
 function shuffle_(arr) {
