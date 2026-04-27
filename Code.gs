@@ -94,10 +94,78 @@ function recoverPriorityAFromStorage() {
 }
 
 /**
+ * Khôi phục danh sách ưu tiên B đã lưu (kể cả khi playlist B đã xoá).
+ * Trả về videoId + title/thumb nếu còn trong cloud cache.
+ */
+function recoverPriorityBFromStorage() {
+  const props = PropertiesService.getUserProperties();
+  const raw = props.getProperty(SETTINGS_KEY_);
+  if (!raw) {
+    return { ok: false, error: "Không tìm thấy cấu hình đã lưu trong UserProperties." };
+  }
+
+  let settings;
+  try {
+    settings = JSON.parse(raw);
+  } catch (e) {
+    return { ok: false, error: "Cấu hình đã lưu bị lỗi JSON." };
+  }
+
+  const priorityBIds = Array.isArray(settings.priorityBIds)
+    ? uniquePreserveOrder_(settings.priorityBIds.map(v => String(v || "").trim()).filter(Boolean))
+    : [];
+
+  const playlistBInput = String(settings.playlistB || "").trim();
+  let playlistBKey = "";
+  try { playlistBKey = playlistBInput ? normalizePlaylistId_(playlistBInput) : ""; } catch (e) {}
+
+  const metaIndex = buildVideoMetaIndexFromCloudCache_(playlistBKey);
+  const items = priorityBIds.map((videoId, idx) => {
+    const meta = metaIndex[videoId] || {};
+    return {
+      order: idx + 1,
+      videoId,
+      title: meta.title || "",
+      thumb: meta.thumb || "",
+    };
+  });
+
+  return {
+    ok: true,
+    playlistBInput,
+    playlistBKey,
+    savedAt: settings.savedAt || "",
+    count: items.length,
+    items,
+    note: "Nếu title trống thì chỉ còn videoId (cache tiêu đề không còn).",
+  };
+}
+
+/**
  * Xuất nhanh danh sách ưu tiên A ra text để copy/paste.
  */
 function recoverPriorityAAsText() {
   const res = recoverPriorityAFromStorage();
+  if (!res.ok) return res;
+
+  const lines = res.items.map(it => {
+    const title = it.title ? ` - ${it.title}` : "";
+    return `${it.videoId}${title}`;
+  });
+
+  return {
+    ok: true,
+    count: res.count,
+    text: lines.join("\n"),
+    items: res.items,
+  };
+}
+
+/**
+ * Xuất nhanh danh sách ưu tiên B ra text để copy/paste.
+ */
+function recoverPriorityBAsText() {
+  const res = recoverPriorityBFromStorage();
   if (!res.ok) return res;
 
   const lines = res.items.map(it => {
@@ -128,7 +196,21 @@ function logRecoveredPriorityA() {
 }
 
 /**
- * Debug tổng hợp: in cấu hình đã lưu + danh sách Priority A ra Logs.
+ * Chạy hàm này trong Apps Script để in danh sách ưu tiên B ra Logs.
+ */
+function logRecoveredPriorityB() {
+  const res = recoverPriorityBAsText();
+  if (!res.ok) {
+    Logger.log("recoverPriorityBAsText error: %s", res.error || "unknown");
+    return res;
+  }
+  Logger.log("Recovered Priority B count: %s", res.count);
+  Logger.log("%s", res.text || "");
+  return res;
+}
+
+/**
+ * Debug tổng hợp: in cấu hình đã lưu + danh sách Priority A/B ra Logs.
  */
 function debugDumpSavedStateAndPriorityA() {
   const settingsRes = loadUserSettings();
@@ -141,7 +223,9 @@ function debugDumpSavedStateAndPriorityA() {
     const s = settingsRes.data;
     Logger.log("savedAt = %s", s.savedAt || "");
     Logger.log("playlistA = %s", s.playlistA || "");
+    Logger.log("playlistB = %s", s.playlistB || "");
     Logger.log("priorityAIds.count = %s", Array.isArray(s.priorityAIds) ? s.priorityAIds.length : 0);
+    Logger.log("priorityBIds.count = %s", Array.isArray(s.priorityBIds) ? s.priorityBIds.length : 0);
   }
 
   const recoverRes = recoverPriorityAAsText();
@@ -153,7 +237,16 @@ function debugDumpSavedStateAndPriorityA() {
     Logger.log("%s", recoverRes.text || "");
   }
 
-  return { settingsRes, recoverRes };
+  const recoverBRes = recoverPriorityBAsText();
+  Logger.log("recoverPriorityBAsText.ok = %s", recoverBRes && recoverBRes.ok);
+  if (!recoverBRes || !recoverBRes.ok) {
+    Logger.log("recoverPriorityBAsText.error = %s", recoverBRes && recoverBRes.error ? recoverBRes.error : "unknown");
+  } else {
+    Logger.log("Recovered Priority B count: %s", recoverBRes.count || 0);
+    Logger.log("%s", recoverBRes.text || "");
+  }
+
+  return { settingsRes, recoverRes, recoverBRes };
 }
 
 /**
